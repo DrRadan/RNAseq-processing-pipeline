@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -S /bin/sh
+#PBS -V
+#PBS -l nodes=1:ppn=12,walltime=36:00:00
+#PBS -N Alignment_Pipeline
+#PBS -o localhost:/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/$PBS_JOBID.$PBS_JOBNAME.jobout
+#PBS -e localhost:/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/$PBS_JOBID.$PBS_JOBNAME.joberr
+#PBS -M ra94@nyu.edu
+#PBS -m abe
+#PBS -q cgsb-s
+
+module load bowtie/intel/1.0.1
+module load bowtie2/intel/2.2.1
+module load tophat/intel/2.0.11
+module load samtools/intel/0.1.19
+
+TAG=$arg
+
+#1. Remove ribosomal 
+bowtie -p 12 --un /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_noRibo.fastq  /data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/Scer3_rRNA_bowtie -1 /data/cgsb/gresham/Niki/Growth_data/PRELIMINARY2/${TAG}_R1.fastq -2 /data/cgsb/gresham/Niki/Growth_data/PRELIMINARY2/${TAG}_R2.fastq
+
+
+#2. Do the optimized alignment and keep unaligned
+bowtie2 -p 12 -I 0 -X 7000 --fr -N 1 -L 20 -i S,1.2,0.50 --local --no-mixed --no-discordant --score-min L,0,1.2 -M 3  --un-conc /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2_.fastq --met-file /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2.metrics -x /data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC_bowtie2  -1 /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_noRibo_1.fastq -2 /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_noRibo_2.fastq -S /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2.sam
+
+
+#3. Align the unmapped from previous step with TopHat
+tophat -r 400  -I 3000 -p 12 --closure-search --library-type fr-firststrand --no-convert-bam -o /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_TopHat /data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC_bowtie /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2_.1.fastq /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2_.2.fastq
+
+#4. Extract unmapped reads and save them
+cd /data/cgsb/gresham/Niki/RESULTS/A111sequencing/Code
+./ExtractUnmappedTophat.pl /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2_.1.fastq /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_TopHat/accepted_hits.sam /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_unaligned_1.fastq
+
+./ExtractUnmappedTophat.pl /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2_.2.fastq /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_TopHat/accepted_hits.sam /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_unaligned_2.fastq
+
+#5. Prepare the two .sam files from steps 2 and 3 for merging and merge
+java -Xmx4g -jar /share/apps/picard-tools/1.111/ReorderSam.jar INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_Bowtie2.sam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_sortBowtie2.bam REFERENCE=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC.fa
+
+java -Xmx4g -jar /share/apps/picard-tools/1.111/ReorderSam.jar INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_TopHat/accepted_hits.sam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_sortTopHat.bam REFERENCE=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC.fa
+
+samtools merge /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.merged.bam /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_sortBowtie2.bam /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}_sortTopHat.bam
+
+#6. Filter for mapping quality
+samtools sort /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.merged.bam /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.merged.sort
+
+samtools view -bq 15 /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.merged.sort.bam > /data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.MAPQ15.bam
+
+#7. Remove duplicates
+
+java -Xmx4g -jar /share/apps/picard-tools/1.111/MarkDuplicates.jar INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.MAPQ15.bam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.noDUPS.bam ASSUME_SORTED=true METRICS_FILE=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.duplication_metrics  REMOVE_DUPLICATES=true
+
+#8. Make Metrics files
+java -Xmx4g -jar /share/apps/picard-tools/1.111/CollectInsertSizeMetrics.jar HISTOGRAM_FILE=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.insert_histogram REFERENCE_SEQUENCE=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC.fa ASSUME_SORTED=true INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.MAPQ15.bam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.insert_metrics
+
+java -Xmx4g -jar /share/apps/picard-tools/1.111/CollectRnaSeqMetrics.jar INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.MAPQ15.bam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.RNA_metrics ASSUME_SORTED=true REFERENCE_SEQUENCE=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC.fa CHART_OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.RNA_metrics.chart METRIC_ACCUMULATION_LEVEL=ALL_READS REF_FLAT=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/sgdGene_refFlat STRAND_SPECIFICITY=SECOND_READ_TRANSCRIPTION_STRAND MINIMUM_LENGTH=150 
+
+java -Xmx4g -jar /share/apps/picard-tools/1.111/CollectAlignmentSummaryMetrics.jar METRIC_ACCUMULATION_LEVEL=ALL_READS INPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.MAPQ15.bam OUTPUT=/data/cgsb/gresham/Niki/RESULTS/Growth/PRELIMINARY2/${TAG}.ALN_Metrics ASSUME_SORTED=true REFERENCE_SEQUENCE=/data/cgsb/gresham/Niki/RESULTS/A111sequencing/References/ScERCC.fa

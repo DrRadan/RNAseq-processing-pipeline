@@ -1,0 +1,20 @@
+#PBS -S /bin/sh
+#PBS -V
+#PBS -l nodes=1:ppn=1,walltime=2:00:00
+#PBS -N pcr_dpl_mark
+#PBS -l mem=24Gb
+#PBS -o localhost:/scratch/$USER/$PBS_JOBID.$PBS_JOBNAME.jobout
+#PBS -e localhost:/scratch/$USER/$PBS_JOBID.$PBS_JOBNAME.joberr
+#PBS -M ra94@nyu.edu
+#PBS -m abe
+
+DESTINATION=$destination # this is the destination directory
+NAME=$name # this is the file name variable (everything before .fastq)
+
+cd /data/cgsb/gresham/LABSHARE/SHARED/CODE
+
+perl check_dup_singlEnd.pl -in ${DESTINATION}/${NAME}.bc.sam -m 1
+
+grep "^@" ${DESTINATION}/${NAME}.rmdup.sam > ${DESTINATION}/${NAME}.rmdup.sort.sam
+grep -v "^@" ${DESTINATION}/${NAME}.rmdup.sam | sort -k3,3 -k4,4n >> ${DESTINATION}/${NAME}.rmdup.sort.sam
+

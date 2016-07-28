@@ -1,0 +1,72 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1038\cocoasubrtf360
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\margl1440\margr1440\vieww37900\viewh21160\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+
+\f0\b\fs24 \cf0 \ul \ulc0  Important QC metrics for \ulc0 directional RNA-seq\ulc0 \
+\
+
+\b0 \ulnone 1) rRNA contamination \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+\cf0 Align the reads to a fasta file containing only the ribosomal regions (indexed by bowtie previously. Scer3_rRNA_bowtie in the example below) using bowtie defaults and the argument --um (extracts non-aligned entries to new fat files). \
+\
+bowtie -p 12 --un /directory/directory/NAME_noRibo.fastq  /directory/directory/Scer3_rRNA_bowtie -1 /directory/directory/NAME_R1.fastq -2 /directory/directory/NAME_R2.fastq\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+\cf0 \
+	(a) Calculate % of reads that belong to rRNA\
+	The % aligned are reported at the stdout/stder reports while running bowtie  
+\b OR 
+\b0 query using grep -c and the header name (Illumina sequencer identifier) in the original and resulting fastq files.\
+	RiboZero typically gives <1% ribosomal, while RiboMinus can have as much ribosomal contamination as 20% in a well-prepped library. \
+	\
+	(b)  Count (as above) the number of reads after rRNAs were removed. \
+	Even with relatively high rRNA contamination the remainder reads could be sufficient for good quantitative assessments. \
+	For the budding yeast anything above 3 million reads should be acceptable (unless there are other intrinsic problems as described later)\
+\
+2) CollectRnaSeqMetrics.jar (picard)\
+It requires the bam file as well as the fasta file of the genome and a refFLAT file describing the coding regions on it . Here is the refFlat description:\
+\
+"A gene prediction with additional geneName field."\
+    (\
+    string  geneName;           "Name of gene as it appears in Genome Browser."\
+    string  name;               "Name of gene"\
+    string  chrom;              "Chromosome name"\
+    char[1] strand;             "+ or - for strand"\
+    uint    txStart;            "Transcription start position"\
+    uint    txEnd;              "Transcription end position"\
+    uint    cdsStart;           "Coding region start"\
+    uint    cdsEnd;             "Coding region end"\
+    uint    exonCount;          "Number of exons"\
+    uint[exonCount] exonStarts; "Exon start positions"\
+    uint[exonCount] exonEnds;   "Exon end positions"\
+    )\
+\
+It generates:\
+	(a) NAME.RNA_metrics table file a table-format text (best viewed in excel) containing the %age of reads aligning to different genomic elements, described at the refFlat file. It also contains a table with the data making up the .RNA_metrics.chart file described below.Here is a good result (yeast UTRs are not annotated and a fraction of the reads mapped as "intergenic" should be attributed to UTRs):\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural\pardirnatural
+\cf0 {{\NeXTGraphic Pasted Graphic 3.pdf \width7240 \height4360
+}¬}\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+\cf0 \
+\
+\
+	(b) NAME.RNA_metrics.chart file is a histogram of the relative, averaged sequencing depth along a coding gene, its length expressed as a percentage of total (In the example below you can see the effect of polyT-priming in sequencing). Homogeneity of depth is ideal, but never practically achieved.\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\ql\qnatural\pardirnatural
+\cf0 {{\NeXTGraphic Pasted Graphic 2.tiff \width12900 \height11720
+}¬}\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+\cf0 \
+
+\b \ul QC steps I like to apply in all sequencing experiments: 
+\b0 \ulnone \
+(1) Boxplot of per-base phred scores as produced during sequencing. Implemented through FastQC \
+(2) % reads non-demultiplexed  (grep -c)\
+(3) % not passing mapping quality (marked using samtools view -bq)(grep -c)\
+(4) % PCR duplicates  (grep -c)\
+(5) Picard's CollectInsertSizeMetrics.jar will tell you if the fragment size of your library as assessed by bioanalyzer or equivalent are agreeing with what was sequenced. Applicable only to paired-end. Disagreement indicates some sort of bias during cluster generation/sequencing \
+(6) Picard's CollectAlignmentSummaryMetrics.jar produces a table with useful data as percent mismatch, percent intels, strand balance etc\
+\
+}
